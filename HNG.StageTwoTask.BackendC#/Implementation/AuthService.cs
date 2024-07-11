@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using Microsoft.AspNetCore.Mvc;
 using System.Net;
+using System.ComponentModel.DataAnnotations;
 
 namespace HNG.StageTwoTask.BackendC_.Implementation
 {
@@ -32,20 +33,33 @@ namespace HNG.StageTwoTask.BackendC_.Implementation
 
         public async Task<RegisterResponseModel> RegisterAsync(RegisterRequestModel request)
         {
-            var validationErrors = ValidateUser(request);
-            if (validationErrors.Count > 0)
+            var validationContext = new ValidationContext(request, serviceProvider: null, items: null);
+            var validationResults = new List<ValidationResult>();
+            bool isValid = Validator.TryValidateObject(request, validationContext, validationResults, validateAllProperties: true);
+
+            // Step 2: Check if validation failed
+            if (!isValid)
             {
+                List<ErrorField> errors = validationResults
+                    .Select(vr => new ErrorField { Field = vr.MemberNames.FirstOrDefault(), Message = vr.ErrorMessage })
+                    .ToList();
+
                 return new RegisterResponseModel
                 {
                     Status = "error",
                     Message = "Validation error",
-                    Data = new RegisterResponseData()
+                    Data = new RegisterResponseData
+                    {
+                        Errors = errors
+                    }
                 };
             }
 
+            // Step 2: Check if the email already exists in the database
             var existingUser = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
             if (existingUser != null)
             {
+                // If the email already exists, return an error response
                 return new RegisterResponseModel
                 {
                     Status = "error",
@@ -54,9 +68,11 @@ namespace HNG.StageTwoTask.BackendC_.Implementation
                 };
             }
 
+            // Step 3: Generate password salt and hash
             byte[] passwordSalt = GenerateSalt();
             byte[] passwordHash = HashPassword(request.Password, passwordSalt);
 
+            // Step 4: Create a new user object
             var newUser = new User
             {
                 UserId = Guid.NewGuid(),
@@ -66,17 +82,20 @@ namespace HNG.StageTwoTask.BackendC_.Implementation
                 Phone = request.Phone,
                 PasswordHash = passwordHash,
                 PasswordSalt = passwordSalt,
-                Password = request.Password
+                // Do not store the plain Password field
             };
 
-            
+            // Step 5: Add the new user to the context and save changes
             _context.Users.Add(newUser);
             await _context.SaveChangesAsync();
 
+            // Step 6: Create a default organization for the new user
             var organisationResponse = await _organisationService.CreateDefaultOrganisationAsync(newUser);
 
+            // Step 7: Generate a JWT token for the new user
             var token = _tokenService.GenerateJwtToken(newUser);
 
+            // Step 8: Return a success response with the generated token and user information
             return new RegisterResponseModel
             {
                 Status = "success",
@@ -94,6 +113,7 @@ namespace HNG.StageTwoTask.BackendC_.Implementation
                 }
             };
         }
+
 
         public async Task<LoginResponseModel> LoginAsync(LoginRequestModel request)
         {
@@ -189,6 +209,16 @@ namespace HNG.StageTwoTask.BackendC_.Implementation
             }
 
             return errors;
+        }
+
+        private bool ValidateRequestModel(RegisterRequestModel request, out List<string> errors)
+        {
+            var context = new ValidationContext(request, serviceProvider: null, items: null);
+            var validationResults = new List<ValidationResult>();
+            var isValid = Validator.TryValidateObject(request, context, validationResults, validateAllProperties: true);
+
+            errors = validationResults.Select(r => r.ErrorMessage).ToList();
+            return isValid;
         }
     }
 }

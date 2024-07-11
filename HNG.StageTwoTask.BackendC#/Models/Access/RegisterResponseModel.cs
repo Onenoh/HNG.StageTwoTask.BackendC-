@@ -13,6 +13,7 @@ namespace HNG.StageTwoTask.BackendC_.Models.Access
     {
         public string AccessToken { get; set; }
         public RegisterData User { get; set; }
+        public List<ErrorField> Errors { get; set; } = new List<ErrorField>();
     }
 
     public class RegisterData
@@ -22,6 +23,12 @@ namespace HNG.StageTwoTask.BackendC_.Models.Access
         public string LastName { get; set; }
         public string Email { get; set; }
         public string Phone { get; set; }
+    }
+
+    public class ErrorField
+    {
+        public string Field { get; set; }
+        public string Message { get; set; }
     }
 
 }
